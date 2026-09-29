@@ -1,0 +1,137 @@
+name: deploy
+
+# Entrega contínua dos manifests da nyx-api.
+# O mesmo commit validado flui dev -> stg -> prod (promoção por commit).
+#
+#   validar      — as mesmas 3 camadas do PR (regras da casa + kubeconiform + trivy)
+#   deploy-dev   — cluster kind efêmero + kubectl apply -k manifests/dev
+#   deploy-stg   — automático após dev
+#   deploy-prod  — environment "prod" com revisor obrigatório (gate manual)
+#
+# Os Pods ficam ImagePullBackOff por design: registry.metacortex.io é o
+# registry fictício do padrão. O que se prova aqui é a aterrissagem dos
+# objetos no API server — a verificação de saúde real seria o rollout status.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "manifests/**"
+      - "scripts/**"
+      - ".github/workflows/deploy.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-nyx
+  cancel-in-progress: false
+
+jobs:
+  validar:
+    name: Validar manifests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Camada 1 — regras da casa
+        run: |
+          pip install pyyaml
+          python scripts/validar-regras-casa.py manifests
+
+      - name: Camada 2 — kubeconform (schema da API do Kubernetes)
+        run: |
+          curl -sSLo /tmp/kubeconform.tar.gz https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          tar -xf /tmp/kubeconform.tar.gz -C /tmp kubeconform
+          /tmp/kubeconform -strict -summary -ignore-missing-schemas manifests/
+
+      - name: Camada 3 — trivy config (varredura de má-configuração)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: manifests/
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
+  deploy-dev:
+    name: Deploy dev
+    needs: validar
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Criar cluster kind
+        uses: helm/kind-action@v1.10.0
+
+      - name: Aplicar manifests de dev
+        run: kubectl apply -k manifests/dev
+
+      - name: Verificar aterrissagem dos objetos
+        run: |
+          set -e
+          kubectl -n nyx-dev get namespace nyx-dev >/dev/null
+          kubectl -n nyx-dev get serviceaccount,configmap,secret,deployment,service
+          echo "--- réplicas (regra 2.3: 1 em dev) ---"
+          test "$(kubectl -n nyx-dev get deploy nyx-api -o jsonpath='{.spec.replicas}')" = "1"
+          echo "--- sem PDB fora de prod (regra 2.5) ---"
+          test -z "$(kubectl -n nyx-dev get pdb --no-headers 2>/dev/null)"
+          echo "dev OK: objetos aterrissaram e as regras de ambiente conferem"
+
+  deploy-stg:
+    name: Deploy stg
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    environment: stg
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Criar cluster kind
+        uses: helm/kind-action@v1.10.0
+
+      - name: Aplicar manifests de stg
+        run: kubectl apply -k manifests/stg
+
+      - name: Verificar aterrissagem dos objetos
+        run: |
+          set -e
+          kubectl -n nyx-stg get serviceaccount,configmap,secret,deployment,service
+          test "$(kubectl -n nyx-stg get deploy nyx-api -o jsonpath='{.spec.replicas}')" = "1"
+          test -z "$(kubectl -n nyx-stg get pdb --no-headers 2>/dev/null)"
+          echo "stg OK: objetos aterrissaram e as regras de ambiente conferem"
+
+  deploy-prod:
+    name: Deploy prod (aguarda aprovação)
+    needs: deploy-stg
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Criar cluster kind
+        uses: helm/kind-action@v1.10.0
+
+      - name: Aplicar manifests de prod
+        run: kubectl apply -k manifests/prod
+
+      - name: Verificar aterrissagem dos objetos
+        run: |
+          set -e
+          kubectl -n nyx-prod get serviceaccount,configmap,secret,deployment,service,pdb
+          echo "--- réplicas (regra 2.3: >= 2 em prod) ---"
+          test "$(kubectl -n nyx-prod get deploy nyx-api -o jsonpath='{.spec.replicas}')" = "2"
+          echo "--- PDB com minAvailable 1 (regra 2.5) ---"
+          test "$(kubectl -n nyx-prod get pdb nyx-api -o jsonpath='{.spec.minAvailable}')" = "1"
+          echo "--- rollout strategy (regra 2.4) ---"
+          test "$(kubectl -n nyx-prod get deploy nyx-api -o jsonpath='{.spec.strategy.type}')" = "RollingUpdate"
+          test "$(kubectl -n nyx-prod get deploy nyx-api -o jsonpath='{.spec.strategy.rollingUpdate.maxUnavailable}')" = "0"
+          echo "prod OK: objetos aterrissaram e as regras de ambiente conferem"

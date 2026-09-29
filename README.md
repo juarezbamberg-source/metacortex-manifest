@@ -93,6 +93,40 @@ kubeconform -strict -summary -ignore-missing-schemas manifests/
 trivy config --severity HIGH,CRITICAL --exit-code 1 manifests/
 ```
 
+## Entrega contínua
+
+O workflow `deploy.yml` roda a cada push na `main` que toque os manifests e promove **o mesmo commit** pelos três ambientes — o commit é a unidade de promoção:
+
+```
+push na main
+   │
+   ▼
+[validar]      3 camadas de validação (o mesmo gate do PR)
+   │
+   ▼
+[deploy-dev]   environment dev   → cluster kind efêmero + kubectl apply -k manifests/dev
+   │
+   ▼
+[deploy-stg]   environment stg   → automático após dev
+   │
+   ▼
+[deploy-prod]  environment prod  → ⏸ pausa e aguarda aprovação na UI do GitHub
+                                   (revisor obrigatório configurado no environment)
+```
+
+- **Gate de produção**: o environment `prod` tem revisor obrigatório — o job pausa em "Waiting for review" até alguém aprovar em *Actions → run → Review deployments*. É o mecanismo nativo do GitHub para gate de produção.
+- **Prova de deploy**: cada ambiente aplica num cluster kind efêmero e verifica a aterrissagem dos objetos (`kubectl get`) e as regras que diferem por ambiente — réplicas (2.3), PDB só em prod (2.5), rollout strategy (2.4). Os Pods ficam `ImagePullBackOff` por design: `registry.metacortex.io` é o registry fictício do padrão; num parque real, este seria o momento do `kubectl rollout status`.
+- **Concorrência**: deploys são serializados (`concurrency`) — dois pushes na main não deployam em paralelo.
+
+### Rollback
+
+- **Caminho normal (GitOps)**: `git revert` do commit que introduziu a mudança + push na `main` — a esteira reentrega o estado anterior pelos mesmos gates.
+- **Emergência (imperativo, documentado no runbook)**: `kubectl rollout undo deployment/nyx-api -n <ambiente>` — mais rápido, porém fora do controle de versão; usar só para conter incidente, conciliando o Git em seguida.
+
+### Em um cluster real
+
+O apply usaria credencial por ambiente (OIDC federado ou secret protegido) em vez de cluster efêmero, e a evolução natural é um GitOps controller (o padrão já prevê `managed-by: argocd`) sincronizando este repositório.
+
 ## Aplicar
 
 ```bash
