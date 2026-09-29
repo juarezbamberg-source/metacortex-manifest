@@ -9,11 +9,12 @@ Manifests Kubernetes da **nyx-api** conformes ao **Padrão de Manifests da Metac
 
 ## A ideia central
 
-Conformidade a um padrão de manifests não pode depender da memória de quem revisa: **policy as code**. Cada PR passa por três camadas de validação no GitHub Actions:
+Conformidade a um padrão de manifests não pode depender da memória de quem revisa: **policy as code**. Cada PR passa por quatro camadas de validação no GitHub Actions:
 
 | # | Camada | O que pega |
 |---|--------|-----------|
-| 1 | `scripts/validar-regras-casa.py` | As regras da casa que as ferramentas genéricas não conhecem: nomenclatura, rótulos obrigatórios, seletor × rótulos do pod, segredo em texto puro, securityContext, probes, réplicas em prod, PDB, targetPort órfão |
+| 0 | `pytest tests/` | Os testes do próprio validador (12 testes: base válida + uma violação por regra) — a camada que valida o validador |
+| 1 | `scripts/validar-regras-casa.py` | As regras da casa que as ferramentas genéricas não conhecem: nomenclatura, rótulos obrigatórios, seletor × rótulos do pod, segredo em texto puro, securityContext, probes (incluindo porta não exposta pelo container), réplicas em prod, PDB, targetPort órfão |
 | 2 | `kubeconform -strict` | O YAML contra o schema real da API do Kubernetes |
 | 3 | `trivy config` | A varredura de má-configuração citada no Bloco 3 do padrão |
 
@@ -23,19 +24,25 @@ O script da camada 1 reproduz a semântica do padrão: **FALHA** para regra *obr
 
 ```
 metacortex-manifest/
-├── .github/workflows/
-│   ├── validar-manifests.yml   # CI de PR: 3 camadas de validação
-│   └── deploy.yml              # CD: validar → dev → stg → prod (gate em prod)
+├── .github/
+│   ├── dependabot.yml          # updates semanais das actions
+│   └── workflows/
+│       ├── validar.yml         # workflow reutilizável: testes + 3 camadas
+│       ├── validar-manifests.yml  # CI de PR (chama validar.yml)
+│       └── deploy.yml          # CD: validar → dev → stg → prod (gate em prod)
 ├── scripts/
 │   └── validar-regras-casa.py  # regras da casa (policy as code)
+├── tests/
+│   └── test_validador.py       # 12 testes do validador (camada 0 do CI)
 ├── docs/
 │   ├── RUNBOOK.md              # procedimento de plantão (o runbook do padrão)
 │   ├── DECISOES.md             # ADRs — decisões e porquês
 │   └── RELATORIO-EXERCICIO.md  # metodologia, provas e lições (MBA)
-└── manifests/
-    ├── dev/    # nyx-dev  — 1 réplica, sem PDB
-    ├── stg/    # nyx-stg  — 1 réplica, sem PDB
-    └── prod/   # nyx-prod — 2 réplicas, RollingUpdate sem queda, PDB
+├── manifests/
+│   ├── dev/    # nyx-dev  — 1 réplica, sem PDB
+│   ├── stg/    # nyx-stg  — 1 réplica, sem PDB
+│   └── prod/   # nyx-prod — 2 réplicas, RollingUpdate sem queda, PDB
+└── LICENSE                     # MIT
 ```
 
 Cada ambiente contém: `namespace`, `serviceaccount`, `configmap`, `secret`, `deployment`, `service` (+ `pdb` em prod) e um `kustomization.yaml` com a ordem de aplicação. YAML puro de propósito: cada objeto fica visível, sem camadas de template — a diferença entre ambientes é exatamente a que o padrão prevê.
@@ -92,9 +99,12 @@ Os conceitos (Pod, ReplicaSet, Deployment, Service, port × targetPort, Endpoint
 
 ## Validar localmente
 
-Requisitos: Python 3.10+ com `pyyaml` (`pip install pyyaml`), [kubeconform](https://github.com/yannh/kubeconform) e [trivy](https://trivy.dev) no PATH.
+Requisitos: Python 3.10+ com `pyyaml` e `pytest` (`pip install pyyaml pytest`), [kubeconform](https://github.com/yannh/kubeconform) e [trivy](https://trivy.dev) no PATH.
 
 ```bash
+# camada 0 — testes do validador
+python -m pytest tests/ -q
+
 # camada 1 — regras da casa
 python scripts/validar-regras-casa.py manifests
 
@@ -138,6 +148,12 @@ push na main
 ### Em um cluster real
 
 O apply usaria credencial por ambiente (OIDC federado ou secret protegido) em vez de cluster efêmero, e a evolução natural é um GitOps controller (o padrão já prevê `managed-by: argocd`) sincronizando este repositório.
+
+## Governança do repositório
+
+- **Branch protection na `main`**: todo change entra por **Pull Request**, com o status check "Validar manifests / Regras da casa + schema + trivy" obrigatório, `strict` (branch atualizada antes do merge), sem force push e com `enforce_admins` — vale até para administradores.
+- **Dependabot**: updates semanais das actions do pipeline (PRs `chore(deps)`), mesclados pelo mesmo fluxo de PR.
+- **Release**: `v1.0.0` taggeada no commit da auditoria — o padrão prega tag imutável, o repo pratica.
 
 ## Aplicar
 
