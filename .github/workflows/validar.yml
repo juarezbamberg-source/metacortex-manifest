@@ -1,0 +1,47 @@
+name: validar
+
+# Workflow reutilizável: a validação em 3 camadas + testes do validador,
+# definida UMA vez e chamada tanto pelo CI de PR (validar-manifests.yml)
+# quanto pelo CD (deploy.yml) — uma única fonte de verdade.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  validar:
+    name: Regras da casa + schema + trivy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Camada 0 — testes do validador
+        run: |
+          pip install pyyaml pytest
+          python -m pytest tests/ -q
+
+      - name: Camada 1 — regras da casa
+        run: python scripts/validar-regras-casa.py manifests
+
+      - name: Camada 2 — kubeconform (schema da API do Kubernetes)
+        run: |
+          curl -sSLo /tmp/kubeconform.tar.gz https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz
+          tar -xf /tmp/kubeconform.tar.gz -C /tmp kubeconform
+          /tmp/kubeconform -strict -summary -ignore-missing-schemas manifests/
+
+      - name: Camada 3 — trivy config (varredura de má-configuração)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: manifests/
+          severity: HIGH,CRITICAL
+          exit-code: "1"

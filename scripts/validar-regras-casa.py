@@ -119,6 +119,21 @@ def checar_container(cont: dict) -> list[Achado]:
         if get_r and get_l and get_r.get("path") == get_l.get("path") and get_r.get("port") == get_l.get("port"):
             a.append(Achado(AVISO, "2.2", "readiness e liveness apontam para o mesmo endpoint — risco conhecido de derrubada em cascata"))
 
+    # 2.2 — a probe tem que apontar para porta que o container de fato expõe
+    portas_decl = {p.get("containerPort") for p in cont.get("ports") or [] if isinstance(p, dict)}
+    nomes_decl = {p.get("name") for p in cont.get("ports") or [] if isinstance(p, dict) and p.get("name")}
+    for tipo in ("readinessProbe", "livenessProbe"):
+        probe = cont.get(tipo)
+        if not probe:
+            continue
+        porta = (probe.get("httpGet") or {}).get("port")
+        if porta is None:
+            continue
+        if isinstance(porta, int) and portas_decl and porta not in portas_decl:
+            a.append(Achado(FALHA, "2.2", f'container "{nome}": {tipo} na porta {porta}, que o container não expõe'))
+        elif isinstance(porta, str) and porta not in nomes_decl:
+            a.append(Achado(FALHA, "2.2", f'container "{nome}": {tipo} em porta nomeada "{porta}", inexistente no container'))
+
     # 3.2 — securityContext do container
     ctx = cont.get("securityContext") or {}
     if ctx.get("allowPrivilegeEscalation") is not False:
