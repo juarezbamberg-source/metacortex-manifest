@@ -3,7 +3,7 @@ name: deploy
 # Entrega contínua dos manifests da nyx-api.
 # O mesmo commit validado flui dev -> stg -> prod (promoção por commit).
 #
-#   validar      — as mesmas 3 camadas do PR (regras da casa + kubeconiform + trivy)
+#   validar      — workflow reutilizável (testes + 3 camadas)
 #   deploy-dev   — cluster kind efêmero + kubectl apply -k manifests/dev
 #   deploy-stg   — automático após dev
 #   deploy-prod  — environment "prod" com revisor obrigatório (gate manual)
@@ -18,6 +18,7 @@ on:
     paths:
       - "manifests/**"
       - "scripts/**"
+      - "tests/**"
       - ".github/workflows/deploy.yml"
 
 permissions:
@@ -30,39 +31,13 @@ concurrency:
 jobs:
   validar:
     name: Validar manifests
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Camada 1 — regras da casa
-        run: |
-          pip install pyyaml
-          python scripts/validar-regras-casa.py manifests
-
-      - name: Camada 2 — kubeconform (schema da API do Kubernetes)
-        run: |
-          curl -sSLo /tmp/kubeconform.tar.gz https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
-          tar -xf /tmp/kubeconform.tar.gz -C /tmp kubeconform
-          /tmp/kubeconform -strict -summary -ignore-missing-schemas manifests/
-
-      - name: Camada 3 — trivy config (varredura de má-configuração)
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          scan-type: config
-          scan-ref: manifests/
-          severity: HIGH,CRITICAL
-          exit-code: "1"
+    uses: ./.github/workflows/validar.yml
 
   deploy-dev:
     name: Deploy dev
     needs: validar
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: dev
     steps:
       - name: Checkout
@@ -89,6 +64,7 @@ jobs:
     name: Deploy stg
     needs: deploy-dev
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: stg
     steps:
       - name: Checkout
@@ -112,6 +88,7 @@ jobs:
     name: Deploy prod (aguarda aprovação)
     needs: deploy-stg
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: prod
     steps:
       - name: Checkout
