@@ -1,8 +1,11 @@
 # metacortex-manifest
 
 [![validar-manifests](https://github.com/juarezbamberg-source/metacortex-manifest/actions/workflows/validar-manifests.yml/badge.svg)](https://github.com/juarezbamberg-source/metacortex-manifest/actions/workflows/validar-manifests.yml)
+[![deploy](https://github.com/juarezbamberg-source/metacortex-manifest/actions/workflows/deploy.yml/badge.svg)](https://github.com/juarezbamberg-source/metacortex-manifest/actions/workflows/deploy.yml)
 
 Manifests Kubernetes da **nyx-api** conformes ao **Padrão de Manifests da Metacortex** — exercício prático do MBA em Engenharia DevOps.
+
+**Documentação:** [Runbook operacional](docs/RUNBOOK.md) · [Registro de decisões (ADRs)](docs/DECISOES.md) · [Relatório do exercício](docs/RELATORIO-EXERCICIO.md)
 
 ## A ideia central
 
@@ -20,8 +23,15 @@ O script da camada 1 reproduz a semântica do padrão: **FALHA** para regra *obr
 
 ```
 metacortex-manifest/
-├── .github/workflows/validar-manifests.yml   # pipeline de validação (3 camadas)
-├── scripts/validar-regras-casa.py            # regras da casa (policy as code)
+├── .github/workflows/
+│   ├── validar-manifests.yml   # CI de PR: 3 camadas de validação
+│   └── deploy.yml              # CD: validar → dev → stg → prod (gate em prod)
+├── scripts/
+│   └── validar-regras-casa.py  # regras da casa (policy as code)
+├── docs/
+│   ├── RUNBOOK.md              # procedimento de plantão (o runbook do padrão)
+│   ├── DECISOES.md             # ADRs — decisões e porquês
+│   └── RELATORIO-EXERCICIO.md  # metodologia, provas e lições (MBA)
 └── manifests/
     ├── dev/    # nyx-dev  — 1 réplica, sem PDB
     ├── stg/    # nyx-stg  — 1 réplica, sem PDB
@@ -81,6 +91,8 @@ Cada ambiente contém: `namespace`, `serviceaccount`, `configmap`, `secret`, `de
 Os conceitos (Pod, ReplicaSet, Deployment, Service, port × targetPort, Endpoints, ConfigMap/Secret, probes) estão comentados **dentro de cada YAML**, no ponto onde aparecem — e a regra 4.5 (`targetPort` tem que apontar para porta que o container escuta) é checada pelo script.
 
 ## Validar localmente
+
+Requisitos: Python 3.10+ com `pyyaml` (`pip install pyyaml`), [kubeconform](https://github.com/yannh/kubeconform) e [trivy](https://trivy.dev) no PATH.
 
 ```bash
 # camada 1 — regras da casa
