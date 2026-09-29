@@ -20,4 +20,3 @@ jobs:
   validar:
     name: Validar manifests
     uses: ./.github/workflows/validar.yml
-    timeout-minutes: 10
