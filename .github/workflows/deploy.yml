@@ -44,7 +44,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Criar cluster kind
-        uses: helm/kind-action@v1.10.0
+        uses: helm/kind-action@v1.15.0
 
       - name: Aplicar manifests de dev
         run: kubectl apply -k manifests/dev
@@ -71,7 +71,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Criar cluster kind
-        uses: helm/kind-action@v1.10.0
+        uses: helm/kind-action@v1.15.0
 
       - name: Aplicar manifests de stg
         run: kubectl apply -k manifests/stg
@@ -95,7 +95,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Criar cluster kind
-        uses: helm/kind-action@v1.10.0
+        uses: helm/kind-action@v1.15.0
 
       - name: Aplicar manifests de prod
         run: kubectl apply -k manifests/prod
