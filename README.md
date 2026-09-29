@@ -1,5 +1,7 @@
 # metacortex-manifest
 
+[![validar-manifests](https://github.com/juarezbamberg-source/metacortex-manifest/actions/workflows/validar-manifests.yml/badge.svg)](https://github.com/juarezbamberg-source/metacortex-manifest/actions/workflows/validar-manifests.yml)
+
 Manifests Kubernetes da **nyx-api** conformes ao **Padrão de Manifests da Metacortex** — exercício prático do MBA em Engenharia DevOps.
 
 ## A ideia central
