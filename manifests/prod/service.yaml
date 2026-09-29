@@ -1,0 +1,24 @@
+# Service — endereço estável (regra 4.4): ClusterIP, acessível só dentro do cluster.
+# port 80 -> targetPort 8080 (regra 4.5): o Service publica 80, o container escuta 8080.
+# Seletor idêntico às labels do template do pod (regra 1.4) — caractere por caractere.
+apiVersion: v1
+kind: Service
+metadata:
+  name: nyx-api
+  namespace: nyx-prod
+  labels:
+    app.kubernetes.io/name: nyx-api
+    app.kubernetes.io/instance: nyx-prod
+    app.kubernetes.io/part-of: nyx
+    app.kubernetes.io/managed-by: platform
+  annotations:
+    metacortex.io/owner: plataforma-nyx
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: nyx-api
+    app.kubernetes.io/instance: nyx-prod
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080

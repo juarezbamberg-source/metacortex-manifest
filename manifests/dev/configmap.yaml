@@ -1,0 +1,17 @@
+# ConfigMap — configuração não sensível fora da imagem (regra 4.7):
+# a mesma imagem 2.9.1 roda em dev, stg e prod. Nenhum segredo aqui (regra 3.3).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nyx-api
+  namespace: nyx-dev
+  labels:
+    app.kubernetes.io/name: nyx-api
+    app.kubernetes.io/instance: nyx-dev
+    app.kubernetes.io/part-of: nyx
+    app.kubernetes.io/managed-by: platform
+  annotations:
+    metacortex.io/owner: plataforma-nyx
+data:
+  app_env: dev
+  log_level: info

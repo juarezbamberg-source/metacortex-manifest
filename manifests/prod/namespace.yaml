@@ -1,0 +1,13 @@
+# Namespace do ambiente — regra 1.2: formato <cliente>-<ambiente>;
+# um cliente nunca divide namespace com outro, nem ambiente com ambiente.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nyx-prod
+  labels:
+    app.kubernetes.io/name: nyx-api
+    app.kubernetes.io/instance: nyx-prod
+    app.kubernetes.io/part-of: nyx
+    app.kubernetes.io/managed-by: platform
+  annotations:
+    metacortex.io/owner: plataforma-nyx

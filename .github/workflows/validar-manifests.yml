@@ -1,0 +1,54 @@
+name: validar-manifests
+
+# Pipeline de conformidade do Padrão de Manifests da Metacortex.
+# Três camadas: regras da casa (script próprio), schema (kubeconform)
+# e varredura de má-configuração (trivy config, citada no Bloco 3 do padrão).
+
+on:
+  pull_request:
+    paths:
+      - "manifests/**"
+      - "scripts/**"
+      - ".github/workflows/validar-manifests.yml"
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validar:
+    name: Regras da casa + schema + trivy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Camada 1 — regras da casa
+        run: |
+          pip install pyyaml
+          python scripts/validar-regras-casa.py manifests
+
+      - name: Camada 2 — kubeconform (schema da API do Kubernetes)
+        run: |
+          curl -sSLo /tmp/kubeconform.tar.gz https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          tar -xf /tmp/kubeconform.tar.gz -C /tmp kubeconform
+          if [ -n "$(find manifests -type f \( -name '*.yaml' -o -name '*.yml' \) 2>/dev/null)" ]; then
+            /tmp/kubeconform -strict -summary -ignore-missing-schemas manifests/
+          else
+            echo "Nenhum manifesto ainda — nada para validar com kubeconform."
+          fi
+
+      - name: Camada 3 — trivy config (varredura de má-configuração)
+        if: ${{ hashFiles('manifests/**/*.yaml') != '' }}
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: manifests/
+          severity: HIGH,CRITICAL
+          exit-code: "1"
